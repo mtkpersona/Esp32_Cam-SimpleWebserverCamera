@@ -1,2 +1,2 @@
-# PanTiltCamera
-This repository contains code and diagram for pan tilt control using servo for esp32 camera
+# Esp32_Cam-Simple_Webserver_Camera
+This repository contains code for controlling the built in led via slider on html page and host video webserver of the esp32 camera without lagging
