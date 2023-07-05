@@ -5,18 +5,6 @@
 #include <ESPAsyncWebServer.h>
 #include <iostream>
 #include <sstream>
-#include <ESP32Servo.h>
-
-#define DUMMY_SERVO1_PIN 12     //We need to create 2 dummy servos.
-#define DUMMY_SERVO2_PIN 13     //So that ESP32Servo library does not interfere with pwm channel and timer used by esp32 camera.
-
-#define PAN_PIN 14
-#define TILT_PIN 15
-
-Servo dummyServo1;
-Servo dummyServo2;
-Servo panServo;
-Servo tiltServo;
 
 //Camera related constants
 #define PWDN_GPIO_NUM     32
@@ -41,7 +29,7 @@ const char* password = "12345678";
 
 AsyncWebServer server(80);
 AsyncWebSocket wsCamera("/Camera");
-AsyncWebSocket wsServoInput("/ServoInput");
+AsyncWebSocket wsLightInput("/LightInput");
 uint32_t cameraClientId = 0;
 
 #define LIGHT_PIN 4
@@ -113,39 +101,21 @@ const char* htmlHomePage PROGMEM = R"HTMLHOMEPAGE(
         <img id="cameraImage" src="" style="width:400px;height:250px"></td>
       </tr> 
       <tr/><tr/>
-      <tr>
-        <td style="text-align:left"><b>Pan:</b></td>
-        <td colspan=2>
-         <div class="slidecontainer">
-            <input type="range" min="0" max="180" value="90" class="slider" id="Pan" oninput='sendButtonInput("Pan",value)'>
-          </div>
-        </td>
-      </tr> 
-      <tr/><tr/>       
-      <tr>
-        <td style="text-align:left"><b>Tilt:</b></td>
-        <td colspan=2>
-          <div class="slidecontainer">
-            <input type="range" min="0" max="180" value="90" class="slider" id="Tilt" oninput='sendButtonInput("Tilt",value)'>
-          </div>
-        </td>   
-      </tr>
-      <tr/><tr/>       
-      <tr>
+      <tr>   
         <td style="text-align:left"><b>Light:</b></td>
         <td colspan=2>
           <div class="slidecontainer">
             <input type="range" min="0" max="255" value="0" class="slider" id="Light" oninput='sendButtonInput("Light",value)'>
           </div>
-        </td>   
-      </tr>      
+        </td>
+      </tr>
     </table>
-  
+    
     <script>
       var webSocketCameraUrl = "ws:\/\/" + window.location.hostname + "/Camera";
-      var webSocketServoInputUrl = "ws:\/\/" + window.location.hostname + "/ServoInput";      
+      var webSocketLightInputUrl = "ws:\/\/" + window.location.hostname + "/LightInput";      
       var websocketCamera;
-      var websocketServoInput;
+      var websocketLightInput;
       
       function initCameraWebSocket() 
       {
@@ -160,32 +130,28 @@ const char* htmlHomePage PROGMEM = R"HTMLHOMEPAGE(
         };
       }
       
-      function initServoInputWebSocket() 
+      function initLightInputWebSocket() 
       {
-        websocketServoInput = new WebSocket(webSocketServoInputUrl);
-        websocketServoInput.onopen    = function(event)
+        websocketLightInput = new WebSocket(webSocketLightInputUrl);
+        websocketLightInput.onopen    = function(event)
         {
-          var panButton = document.getElementById("Pan");
-          sendButtonInput("Pan", panButton.value);
-          var tiltButton = document.getElementById("Tilt");
-          sendButtonInput("Tilt", tiltButton.value);
           var lightButton = document.getElementById("Light");
           sendButtonInput("Light", lightButton.value);          
         };
-        websocketServoInput.onclose   = function(event){setTimeout(initServoInputWebSocket, 2000);};
-        websocketServoInput.onmessage = function(event){};        
+        websocketLightInput.onclose   = function(event){setTimeout(initLightInputWebSocket, 2000);};
+        websocketLightInput.onmessage = function(event){};        
       }
       
       function initWebSocket() 
       {
         initCameraWebSocket ();
-        initServoInputWebSocket();
+        initLightInputWebSocket();
       }
 
       function sendButtonInput(key, value) 
       {
         var data = key + "," + value;
-        websocketServoInput.send(data);
+        websocketLightInput.send(data);
       }
     
       window.onload = initWebSocket;
@@ -207,7 +173,7 @@ void handleNotFound(AsyncWebServerRequest *request)
     request->send(404, "text/plain", "File Not Found");
 }
 
-void onServoInputWebSocketEvent(AsyncWebSocket *server, 
+void onLightInputWebSocketEvent(AsyncWebSocket *server, 
                       AsyncWebSocketClient *client, 
                       AwsEventType type,
                       void *arg, 
@@ -221,8 +187,6 @@ void onServoInputWebSocketEvent(AsyncWebSocket *server,
       break;
     case WS_EVT_DISCONNECT:
       Serial.printf("WebSocket client #%u disconnected\n", client->id());
-      panServo.write(90);
-      tiltServo.write(90);
       ledcWrite(PWMLightChannel, 0);
       break;
     case WS_EVT_DATA:
@@ -240,15 +204,7 @@ void onServoInputWebSocketEvent(AsyncWebSocket *server,
         if ( value != "" )
         {
           int valueInt = atoi(value.c_str());
-          if (key == "Pan")
-          {
-            panServo.write(valueInt);
-          }
-          else if (key == "Tilt")
-          {
-            tiltServo.write(valueInt);   
-          }
-          else if (key == "Light")
+          if (key == "Light")
           {
             ledcWrite(PWMLightChannel, valueInt);         
           }           
@@ -369,11 +325,6 @@ void sendCameraPicture()
 
 void setUpPinModes()
 {
-  dummyServo1.attach(DUMMY_SERVO1_PIN);
-  dummyServo2.attach(DUMMY_SERVO2_PIN);  
-  panServo.attach(PAN_PIN);
-  tiltServo.attach(TILT_PIN);
-
   //Set up flash light
   ledcSetup(PWMLightChannel, 1000, 8);
   pinMode(LIGHT_PIN, OUTPUT);    
@@ -397,8 +348,8 @@ void setup(void)
   wsCamera.onEvent(onCameraWebSocketEvent);
   server.addHandler(&wsCamera);
 
-  wsServoInput.onEvent(onServoInputWebSocketEvent);
-  server.addHandler(&wsServoInput);
+  wsLightInput.onEvent(onLightInputWebSocketEvent);
+  server.addHandler(&wsLightInput);
 
   server.begin();
   Serial.println("HTTP server started");
@@ -410,7 +361,7 @@ void setup(void)
 void loop() 
 {
   wsCamera.cleanupClients(); 
-  wsServoInput.cleanupClients(); 
+  wsLightInput.cleanupClients(); 
   sendCameraPicture(); 
   //Serial.printf("SPIRam Total heap %d, SPIRam Free Heap %d\n", ESP.getPsramSize(), ESP.getFreePsram());
 }
